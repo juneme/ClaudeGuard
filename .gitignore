@@ -1,0 +1,40 @@
+.DS_Store
+*.tmp
+*.log
+
+# build output
+build/
+dist/
+**/bin/
+**/obj/
+.vs/
+__pycache__/
+
+# local state, never committed
+accounts/
+lastip
+last-check.txt
+
+# IDE and local user settings
+.idea/
+*.user
+*.suo
+*.sln.docstates
+Thumbs.db
+Desktop.ini
+
+# Local credentials and signing material
+.env
+.env.*
+!.env.example
+*.pfx
+*.p12
+*.key
+*.pem
+
+# Release packages belong in GitHub Releases
+/release/
+/releases/
+/ClaudeGuard-*.exe
+/ClaudeGuard-*.zip
+/ClaudeGuard-*.sha256
