@@ -4,7 +4,7 @@ Windows 10/11 x64 上的 Claude 桌面连接守护。统一的 C# / .NET 10 源�
 
 ## 使用
 
-运行 `ClaudeGuard-3.0.1-win-x64.exe`，无需预装 .NET。可从仓库发布者提供的 GitHub Releases 下载安装包，或按下文自行构建；源码仓库不包含 EXE。先自行连接 Clash Verge，并开启 TUN、auto-route 和 strict-route；打开程序选择目标地区，点击「开始检测」，检查通过后启动 Claude。
+运行 `ClaudeGuard-3.0.1-win-x64.exe`，无需预装 .NET。可从 [GitHub Releases](https://github.com/juneme/ClaudeGuard/releases/latest) 下载安装包，或按下文自行构建；源码仓库不包含 EXE。先自行连接 Clash Verge，并开启 TUN、auto-route 和 strict-route；打开程序选择目标地区，点击「开始检测」，检查通过后启动 Claude。
 
 首次打开会请求管理员授权，将内嵌服务安装到 `Program Files\ClaudeGuard`。连接保护未建立时会尝试一次自动修复，也可手动点击「修复连接」。关闭窗口会隐藏到托盘；托盘退出会停止守护，并让受保护的 Claude 保持隔离。再次打开并检测通过后恢复。
 
@@ -45,21 +45,20 @@ scripts/                 构建与源码校验
 
 卸载服务：以管理员身份运行 `ClaudeGuard-3.0.1-win-x64.exe --uninstall-service`，移除服务及专用规则，保留安装目录文件。
 
-## 上传 GitHub
+## 在其他电脑维护
 
-当前目录就是仓库根目录，包含源码、测试、构建脚本、许可证和校验清单。`bin/`、`obj/`、构建输出、本机状态及凭据文件已加入 `.gitignore`。
-
-在 GitHub 创建空仓库后，在当前目录执行以下命令（将地址替换为自己的仓库地址）：
+安装 Git、.NET 10 SDK 和 Python 3 后，克隆本仓库：
 
 ```powershell
-git add .
-git diff --cached --stat
-git commit -m "Initial import of ClaudeGuard 3.0.1"
-git remote add origin https://github.com/YOUR_USERNAME/ClaudeGuard.git
-git push -u origin main
+git clone https://github.com/juneme/ClaudeGuard.git
+cd ClaudeGuard
+dotnet run --project tests/ClaudeGuard.Tests -c Release
+python scripts/build.py
 ```
 
-本次整理的目录已初始化 `main` 分支；如果使用下载的源码 ZIP，请先运行 `git init -b main`。发布 EXE 时，上传到 GitHub Releases 并提供 SHA256 校验值，避免把大型安装包提交到源码历史。
+只需使用程序时，从 [Releases](https://github.com/juneme/ClaudeGuard/releases/latest) 下载 `ClaudeGuard-3.0.1-win-x64.exe` 即可。源码仓库保留测试、构建脚本和许可证；编译缓存、本机状态及凭据由 `.gitignore` 排除。仓库为私有，在其他电脑需要登录有权限的 GitHub 账号。
+
+修改源码后先运行测试和构建，再执行 `python scripts/gen-sums.py` 更新源码校验清单，然后提交和推送。安装包单独上传到 GitHub Releases。
 
 ## 许可与来源
 
