@@ -56,7 +56,7 @@ dotnet run --project tests/ClaudeGuard.Tests -c Release
 python scripts/build.py
 ```
 
-只需使用程序时，从 [Releases](https://github.com/juneme/ClaudeGuard/releases/latest) 下载 `ClaudeGuard-3.0.1-win-x64.exe` 即可。源码仓库保留测试、构建脚本和许可证；编译缓存、本机状态及凭据由 `.gitignore` 排除。仓库为私有，在其他电脑需要登录有权限的 GitHub 账号。
+只需使用程序时，从 [Releases](https://github.com/juneme/ClaudeGuard/releases/latest) 下载 `ClaudeGuard-3.0.1-win-x64.exe` 即可。源码仓库保留测试、构建脚本和许可证；编译缓存、本机状态及凭据由 `.gitignore` 排除。仓库为公开，可直接克隆源码和下载安装包；推送修改需要登录有写入权限的 GitHub 账号。
 
 修改源码后先运行测试和构建，再执行 `python scripts/gen-sums.py` 更新源码校验清单，然后提交和推送。安装包单独上传到 GitHub Releases。
 
