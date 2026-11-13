@@ -73,7 +73,7 @@
     </StackPanel>
     <StackPanel Grid.Row="4">
      <Border Background="#E7E9E3" CornerRadius="9" Padding="12"><StackPanel><TextBlock x:Name="ServiceLabel" Text="●  正在启动守护" FontSize="12" Foreground="#657064"/><TextBlock Text="托盘退出后停止守护" FontSize="10" Foreground="#92968E" Margin="13,6,0,0"/></StackPanel></Border>
-     <TextBlock Text="WINDOWS  /  3.0.1" FontSize="10" Foreground="#AAACA5" Margin="9,18,0,0"/>
+    <TextBlock x:Name="VersionLabel" Text="WINDOWS" FontSize="10" Foreground="#AAACA5" Margin="9,18,0,0"/>
     </StackPanel>
    </Grid>
   </Border>
@@ -87,7 +87,7 @@
    <Border x:Name="StatusCard" Grid.Row="2" Background="#EDF1EA" CornerRadius="13" Padding="23,21" BorderBrush="#E1E7DC" BorderThickness="1">
     <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="52"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
      <Border x:Name="StatusBadge" Width="39" Height="39" Background="#DCE6D6" CornerRadius="12" VerticalAlignment="Top"><TextBlock x:Name="StatusSymbol" Text="◈" FontSize="23" Foreground="#5A7654" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
-     <StackPanel Grid.Column="1"><TextBlock x:Name="StatusTitle" Text="准备好，再出发" FontSize="17" FontWeight="SemiBold"/><TextBlock x:Name="StatusDetail" Text="请先手动打开 Clash Verge，并开启 TUN 连接。" Foreground="#808B79" FontSize="12" Margin="0,8,0,0" TextWrapping="Wrap"/><TextBlock x:Name="LastChecked" Text="尚未检测" FontSize="10" Foreground="#929C8C" Margin="0,12,0,0"/><Button x:Name="ServiceSetupButton" Content="重试启动守护" Click="RetryService" Visibility="Collapsed" HorizontalAlignment="Left" Padding="12,6" Margin="0,10,0,0"/></StackPanel>
+     <StackPanel Grid.Column="1"><TextBlock x:Name="StatusTitle" Text="准备好，再出发" FontSize="17" FontWeight="SemiBold"/><TextBlock x:Name="StatusDetail" Text="点击「开始检测」，确认代理、出口与连接保护。" Foreground="#808B79" FontSize="12" Margin="0,8,0,0" TextWrapping="Wrap"/><TextBlock x:Name="LastChecked" Text="尚未检测" FontSize="10" Foreground="#929C8C" Margin="0,12,0,0"/><Button x:Name="ServiceSetupButton" Content="重试启动守护" Click="RetryService" Visibility="Collapsed" HorizontalAlignment="Left" Padding="12,6" Margin="0,10,0,0"/></StackPanel>
     </Grid>
    </Border>
    <StackPanel Grid.Row="3" Margin="0,22,0,0">
@@ -96,7 +96,7 @@
    </StackPanel>
    <StackPanel Grid.Row="4">
     <Expander x:Name="SettingsPanel" Header="客户端与服务设置" Foreground="#878A82" FontSize="11" Margin="0,12,0,16"><StackPanel Margin="0,12,0,0">
-     <TextBlock Text="Claude 安装位置（自动查找）" Style="{StaticResource Muted}" Margin="0,0,0,5"/><TextBox x:Name="ClaudePath" IsReadOnly="True" FontSize="11" VerticalContentAlignment="Center" ToolTip="每次检测时自动查找官方 Claude 安装位置"/>
+     <TextBlock Text="Claude 安装位置（自动查找，可手动指定）" Style="{StaticResource Muted}" Margin="0,0,0,5"/><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBox x:Name="ClaudePath" FontSize="11" VerticalContentAlignment="Center" Padding="8,6" TextChanged="ClaudePathChanged" ToolTip="自动查找官方 Claude 安装位置，也可手动指定 Claude.exe"/><Button x:Name="BrowseClaudeButton" Grid.Column="1" Content="浏览…" Margin="8,0,0,0" Padding="12,6" Click="BrowseClaude" ToolTip="手动选择已安装的 Claude.exe"/></Grid>
      <TextBlock Text="Clash 控制接口密钥（通常自动读取）" Style="{StaticResource Muted}" Margin="0,8,0,5"/><PasswordBox x:Name="ControllerSecret" PasswordChanged="SecretChanged" Padding="8,6" ToolTip="仅用于本机通信，不写日志。"/>
     </StackPanel></Expander>
     <Grid><StackPanel Orientation="Horizontal" VerticalAlignment="Bottom"><Button x:Name="CheckButton" Content="开始检测" Click="CheckClick"/><Button x:Name="RepairButton" Content="修复连接" Margin="9,0,0,0" Click="RepairClick"/></StackPanel><StackPanel HorizontalAlignment="Right"><TextBlock x:Name="LaunchHint" Text="检测通过后可启动" FontSize="10" Foreground="#728074" HorizontalAlignment="Right" Margin="0,0,2,6"/><Button x:Name="LaunchButton" Style="{StaticResource LaunchAction}" Content="启动 Claude  ↗" HorizontalAlignment="Right" IsEnabled="False" Click="LaunchClick" Padding="26,11" ToolTipService.ShowOnDisabled="True" ToolTip="先完成连接检查并修复未通过的项目"/></StackPanel></Grid>

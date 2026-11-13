@@ -15,7 +15,10 @@ public static class GuardLifecycle
 {
     // Bumped whenever the wire contract or service behaviour changes. Anything older is replaced
     // before use; the app never runs against a service it does not recognise.
-    public const int RequiredProtocol = 5;
+    // v7 retries unconfirmed isolation before recovery, and keeps probe faults inside the
+    // monitor. Older service behaviour must be replaced together with the new launcher UI.
+    // v8 requires installer migration of the legacy scheduled process-killing guard.
+    public const int RequiredProtocol = 8;
 
     // Connects, and replaces a missing or outdated service in place. The installer stops the old
     // service first, so there are never two guards running at once.

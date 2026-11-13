@@ -17,25 +17,30 @@ public partial class MainWindow : Window
     private readonly CancellationTokenSource lifetime = new();
     private readonly IGuardServiceRuntime service;
     private readonly System.Windows.Forms.NotifyIcon? tray;
-    private bool busy, polling, startingService, quitting, initializing = true, autoRepairTried;
+    private bool busy, polling, startingService, quitting, initializing = true, autoRepairTried, stopFailed;
     private int displayEpoch;
-    private string checkedPath = "", checkedCountry = "";
+    private string checkedPath = "", checkedCountry = "", localNotice = "";
+    private string launchNotice = "";
     private Response? latest;
     private readonly string settingsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ClaudeGuard", "ui.json");
     private sealed record Preferences(string AppPath, string Country);
     public MainWindow()
     {
         InitializeComponent();
+        VersionLabel.Text = "WINDOWS / " + typeof(MainWindow).Assembly.GetName().Version?.ToString(3);
         service = new GuardServiceRuntime();
         CountryBox.ItemsSource = RegionPolicy.Targets;
         CountryBox.SelectedItem = "US";
+        string savedPath = "";
         try
         {
             var settings = JsonSerializer.Deserialize<Preferences>(File.ReadAllText(settingsPath));
             if (settings != null && RegionPolicy.IsTarget(settings.Country)) CountryBox.SelectedItem = settings.Country;
+            // A previously validated manual pick wins; discovery only fills in when it is gone.
+            if (settings?.AppPath is { Length: > 0 } saved && File.Exists(saved)) savedPath = saved;
         }
         catch { }
-        ClaudePath.Text = ClaudeLocator.Find();
+        ClaudePath.Text = savedPath.Length > 0 ? savedPath : ClaudeLocator.Find();
         ControllerSecret.Password = FindControllerSecret();
         tray = new System.Windows.Forms.NotifyIcon { Icon = System.Drawing.Icon.ExtractAssociatedIcon(Environment.ProcessPath!) ?? System.Drawing.SystemIcons.Shield, Text = "ClaudeGuard · 连接守护", Visible = true };
         var menu = new System.Windows.Forms.ContextMenuStrip();
@@ -58,6 +63,9 @@ public partial class MainWindow : Window
             if (busy || quitting || epoch != displayEpoch) return;
             if (response.Protocol < GuardLifecycle.RequiredProtocol) { ShowOffline("守护版本需要更新，请重试启动守护。"); return; }
             if (checkedPath.Length == 0 && response.Ready) response = response with { Ready = false, Message = "窗口已重新打开，请先检测本次启动条件" };
+            // A specific local message outranks the placeholder idle state before any check has run.
+            if (localNotice.Length > 0 && response.Phase == "idle" && response.Checks.Count == 0) return;
+            localNotice = "";
             Display(response); ServiceLabel.Text = "●  守护服务运行中";
         }
         catch { if (!busy && !quitting && epoch == displayEpoch) ShowOffline(); }
@@ -138,13 +146,17 @@ public partial class MainWindow : Window
     {
         if (busy || startingService) return;
         displayEpoch++;
-        ClaudePath.Text = ClaudeLocator.Find();
+        // Fill from discovery only when the box is empty; a manual pick is never overwritten.
+        if (ClaudePath.Text.Length == 0) ClaudePath.Text = ClaudeLocator.Find();
         if (ClaudePath.Text.Length == 0)
         {
             checkedPath = ""; SettingsPanel.IsExpanded = true;
-            Display(new("blocked", "没有找到 Claude 桌面客户端，请先安装后重新检测。", [new("Claude 客户端", "fail", "未找到默认安装位置")]));
+            localNotice = "没有找到 Claude 桌面客户端，请安装官方客户端，或在下方「客户端与服务设置」中手动指定 Claude.exe 后重新检测。";
+            Display(new("blocked", localNotice, [new("Claude 客户端", "fail", "未找到 Claude.exe，可手动指定安装位置")]));
             return;
         }
+        localNotice = "";
+        launchNotice = "";
         busy = true; SetBusy(true);
         try
         {
@@ -162,12 +174,13 @@ public partial class MainWindow : Window
             catch (UnauthorizedAccessException) { }
         }
         catch (ServiceUnavailableException) { ShowOffline(); }
-        catch { Display(new("blocked", "检查未完成，请确认服务已安装、Clash Verge 已连接后重试", [])); }
+        catch { localNotice = "检查未完成，请确认服务已安装、守护运行正常后重试"; Display(new("blocked", localNotice, [])); }
         finally { busy = false; SetBusy(false); }
     }
     private void SetBusy(bool value)
     {
         CheckButton.IsEnabled = RepairButton.IsEnabled = CountryBox.IsEnabled = !value;
+        ClaudePath.IsEnabled = BrowseClaudeButton.IsEnabled = !value;
         ControllerSecret.IsEnabled = !value;
         RiskCheckButton.IsEnabled = !value;
         ForceButton.IsEnabled = !value;
@@ -179,11 +192,12 @@ public partial class MainWindow : Window
     {
         latest = response;
         bool blockedByRisk = response.Phase == "ready" && response.Verdict == RiskVerdict.Block;
-        StatusTitle.Text = blockedByRisk ? "出口有风险。" : response.Phase switch { "ready" => "一切就绪。", "starting" => "正在启动守护…", "checking" => "正在确认连接…", "reconnecting" => "暂时断网，等待重连", "offline" => "守护未启动", "blocked" => "需要一点处理", _ => "准备好，再出发" };
-        StatusDetail.Text = response.Message;
+        bool launchFailed = response.Phase == "ready" && launchNotice.Length > 0;
+        StatusTitle.Text = launchFailed ? "Claude 启动失败。" : blockedByRisk ? "出口有风险。" : response.Phase switch { "ready" => "一切就绪。", "starting" => "正在启动守护…", "checking" => "正在确认连接…", "reconnecting" => "暂时断网，等待重连", "offline" => "守护未启动", "blocked" => "需要一点处理", _ => "准备好，再出发" };
+        StatusDetail.Text = response.Phase == "ready" && launchNotice.Length > 0 ? launchNotice : response.Message;
         ServiceSetupButton.Visibility = response.Phase == "offline" ? Visibility.Visible : Visibility.Collapsed;
-        StatusSymbol.Text = blockedByRisk ? "!" : response.Ready ? "✓" : response.Phase == "checking" ? "◌" : "◈";
-        ApplyStatusTone(blockedByRisk || response.Phase is "blocked" or "reconnecting", response.Ready && !blockedByRisk);
+        StatusSymbol.Text = launchFailed || blockedByRisk ? "!" : response.Ready ? "✓" : response.Phase == "checking" ? "◌" : "◈";
+        ApplyStatusTone(launchFailed || blockedByRisk || response.Phase is "blocked" or "reconnecting", response.Ready && !blockedByRisk && !launchFailed);
         LastChecked.Text = response.LastChecked is { } stamp ? "服务最近确认于 " + stamp.ToLocalTime().ToString("HH:mm:ss") + " · 后台持续守护" : "等待本次检测";
         var checks = response.Checks.Count > 0 ? response.Checks : [new CheckItem("Clash Verge", "idle", "等待确认客户端与 TUN"), new("出口地区", "idle", "代理就绪后检测"), new("连接保护", "idle", "出口一致后检查")];
         ChecksList.ItemsSource = checks.Select(c => new { c.Title, c.Detail, Symbol = c.State == "ok" ? "✓" : c.State == "fail" ? "!" : c.State == "warn" ? "▲" : "·", Color = Tone(c.State) }).ToArray();
@@ -297,15 +311,49 @@ public partial class MainWindow : Window
         busy = true; SetBusy(true);
         try
         {
-            if (checkedPath != ClaudePath.Text || checkedPath != ClaudeLocator.Find() || checkedCountry != (CountryBox.SelectedItem as string)) throw new IOException();
+            // The service verified this exact path at check time; discovery need not agree with a valid manual pick.
+            if (checkedPath.Length == 0 || checkedPath != ClaudePath.Text || checkedCountry != (CountryBox.SelectedItem as string)) throw new IOException();
+            // Resolve the Windows launch entry before consuming the short-lived permit.
+            // Store/MSIX apps must be activated through their registered AUMID.
+            var target = await Task.Run(() => ClaudeLauncher.Resolve(checkedPath), lifetime.Token);
             var grant = await PipeClient.SendAsync(new("permit", Force: force), lifetime.Token);
             if (grant.Protocol < GuardLifecycle.RequiredProtocol) { ShowOffline("守护版本需要更新，请重试启动守护。"); return; }
             if (!grant.Ready || grant.Ticket.Length == 0) { Display(grant); return; }
-            Process.Start(new ProcessStartInfo(checkedPath) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(checkedPath)! });
+            int pid = await Task.Run(() => ClaudeLauncher.Start(target), lifetime.Token);
             Display(grant with { LaunchUsed = true, Message = force ? "已强制启动 Claude，后台继续守护连接" : "Claude 已启动，后台正在持续守护连接", Ticket = "" });
+            _ = ObserveLaunchAsync(pid, displayEpoch);
         }
-        catch { Display(new("blocked", "启动未完成，请重新检测后重试", [])); }
+        catch (IOException error) { localNotice = error.Message; Display(new("blocked", localNotice, [])); }
+        catch (Exception error)
+        {
+            localNotice = $"启动未完成（错误码 0x{unchecked((uint)error.HResult):X8}），请重新检测后重试";
+            Display(new("blocked", localNotice, []));
+        }
         finally { busy = false; SetBusy(false); }
+    }
+
+    private async Task ObserveLaunchAsync(int pid, int epoch)
+    {
+        if (pid == 0) return;
+        try
+        {
+            using var process = Process.GetProcessById(pid);
+            using var budget = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
+            budget.CancelAfter(TimeSpan.FromSeconds(30));
+            await process.WaitForExitAsync(budget.Token);
+            // Electron may hand off to an existing instance. Do not report that as a crash.
+            foreach (var other in Process.GetProcessesByName("Claude"))
+                using (other)
+                    try { if (!other.HasExited && string.Equals(other.MainModule?.FileName, checkedPath, StringComparison.OrdinalIgnoreCase)) return; }
+                    catch { }
+            if (quitting || epoch != displayEpoch) return;
+            launchNotice = $"Claude 已提前退出（退出码 0x{unchecked((uint)process.ExitCode):X8}）。守护未执行结束进程；请查看 Claude 崩溃日志后重新检测。";
+            if (latest != null) Display(latest);
+        }
+        catch (OperationCanceledException) { }
+        catch (ArgumentException) { }
+        catch (System.ComponentModel.Win32Exception) { }
+        catch (InvalidOperationException) { }
     }
     private void ShowOverview(object sender, RoutedEventArgs e) => ShowPage(false);
     private void ShowRisk(object sender, RoutedEventArgs e) => ShowPage(true);
@@ -327,7 +375,14 @@ public partial class MainWindow : Window
     private async void RepairClick(object sender, RoutedEventArgs e) { autoRepairTried = false; await CheckAsync(true); }
     private void InputsChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e) => InvalidateInputs();
     private void SecretChanged(object sender, RoutedEventArgs e) => InvalidateInputs();
-    private void InvalidateInputs() { if (!initializing && !busy) { displayEpoch++; checkedPath = ""; Display(new("idle", "设置已变化，请重新检测", [])); } }
+    private void ClaudePathChanged(object sender, System.Windows.Controls.TextChangedEventArgs e) => InvalidateInputs();
+    private void BrowseClaude(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog { Title = "选择 Claude 客户端", Filter = "Claude 客户端|Claude.exe", CheckFileExists = true, Multiselect = false };
+        try { if (ClaudePath.Text.Length > 0 && Path.GetDirectoryName(ClaudePath.Text) is { Length: > 0 } dir) dialog.InitialDirectory = dir; } catch (ArgumentException) { }
+        if (dialog.ShowDialog() == true) ClaudePath.Text = dialog.FileName;
+    }
+    private void InvalidateInputs() { if (!initializing && !busy) { displayEpoch++; checkedPath = ""; localNotice = "设置已变化，请重新检测"; Display(new("idle", localNotice, [])); } }
     private async void RetryService(object sender, RoutedEventArgs e)
     {
         await StartServiceAsync(true);
@@ -366,13 +421,16 @@ public partial class MainWindow : Window
         quitting = true; poll.Stop();
         try
         {
-            await GuardLifecycle.StopAsync(service, lifetime.Token);
+            // After one failed stop, a second quit must still free the user: exit the window and
+            // leave the guard running instead of trapping the session forever.
+            if (!stopFailed) await GuardLifecycle.StopAsync(service, lifetime.Token);
             lifetime.Cancel(); tray?.Dispose(); System.Windows.Application.Current.Shutdown();
         }
         catch
         {
+            stopFailed = true;
             quitting = false; poll.Start(); ShowWindow();
-            Display(new("blocked", "暂时无法停止守护，程序仍在运行。请稍后从托盘重新退出。", []));
+            Display(new("blocked", "守护未能停止，可能仍在后台运行。再次从托盘退出将仅关闭本界面（守护保持运行）。", []));
         }
     }
     protected override void OnClosing(CancelEventArgs e) { if (!quitting) { e.Cancel = true; Hide(); } base.OnClosing(e); }

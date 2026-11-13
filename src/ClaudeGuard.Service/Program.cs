@@ -35,9 +35,13 @@ internal sealed class GuardService : ServiceBase
         await Task.WhenAny(server!, monitor!);
         if (!lifetime.IsCancellationRequested && !stopping)
         {
-            coordinator?.Shutdown();
-            // A broken monitor must be a real failure so SCM recovery is triggered.
-            Environment.Exit(1);
+            try { coordinator?.Shutdown(); }
+            finally
+            {
+                // Recover only this service. Even an isolation fault must not bypass SCM
+                // recovery or cause any attempt to terminate the protected Claude process.
+                Environment.Exit(1);
+            }
         }
     }
     private async Task MonitorAsync(CancellationToken ct)
@@ -72,8 +76,14 @@ internal sealed class GuardService : ServiceBase
                 {
                     case "status": response = coordinator!.Status; break;
                     case "shutdown":
-                        coordinator!.Shutdown(); stopping = true; shutdown = true;
-                        response = new("stopping", "正在停止守护服务", []); break;
+                        // Stopping must survive an isolation fault: the grant is already revoked,
+                        // and refusing to stop only traps the user with a guard that cannot exit.
+                        string stopNote = "";
+                        try { coordinator!.Shutdown(); }
+                        catch (CheckFailed e) { stopNote = "；" + e.Message; }
+                        catch (Exception) { stopNote = "；连接隔离状态未能确认"; }
+                        stopping = true; shutdown = true;
+                        response = new("stopping", "正在停止守护服务" + stopNote, []); break;
                     case "permit": response = await coordinator!.PermitAsync(request.Force, budget.Token); break;
                     case "check": case "repair":
                         response = await coordinator!.CheckAsync(request.Country, request.Command == "repair", budget.Token, () =>
@@ -103,7 +113,7 @@ internal sealed class GuardService : ServiceBase
     {
         lifetime.Cancel();
         try { Task.WhenAll(server ?? Task.CompletedTask, monitor ?? Task.CompletedTask).Wait(TimeSpan.FromSeconds(8)); } catch { }
-        coordinator?.Shutdown();
+        try { coordinator?.Shutdown(); } catch { }
         probe?.Dispose();
     }
     public static void Main() => Run(new GuardService());

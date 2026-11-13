@@ -32,10 +32,14 @@ public sealed class WindowsProbe(string owner) : IEnvironmentProbe, IDisposable
 
     public async Task<ProxySnapshot> ProxyAsync(CancellationToken ct)
     {
-        bool verge = false;
-        foreach (var p in Process.GetProcessesByName("clash-verge")) using (p)
-        { try { verge |= Native.Owner(p) == owner; } catch { } }
-        if (!verge) throw new CheckFailed("Clash Verge", "请手动打开 Clash Verge 并连接代理");
+        bool seen = false, verge = false;
+        foreach (string name in new[] { "clash-verge", "clash-verge-rev" })
+            foreach (var p in Process.GetProcessesByName(name)) using (p)
+            { try { seen = true; verge |= Native.Owner(p) == owner; } catch { } }
+        if (!verge) throw new CheckFailed("Clash Verge", seen
+            ? "检测到 Clash Verge 进程，但未能确认其运行账户与本机配置一致，请以本机配置的账户重新打开后重试"
+            : "请手动打开 Clash Verge 并连接代理");
+        bool unauthorized = false;
         var kernels = Process.GetProcessesByName("verge-mihomo");
         try
         {
@@ -54,7 +58,7 @@ public sealed class WindowsProbe(string owner) : IEnvironmentProbe, IDisposable
                             using var request = new HttpRequestMessage(HttpMethod.Get, $"http://127.0.0.1:{port}/configs");
                             if (Secret.Length != 0) request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", Secret);
                             using var result = await http.SendAsync(request, budget.Token);
-                            if (result.StatusCode == HttpStatusCode.Unauthorized) continue;
+                            if (result.StatusCode == HttpStatusCode.Unauthorized) { unauthorized = true; continue; }
                             result.EnsureSuccessStatusCode();
                             using var json = JsonDocument.Parse(await result.Content.ReadAsStringAsync(budget.Token));
                             var root = json.RootElement;
@@ -82,7 +86,9 @@ public sealed class WindowsProbe(string owner) : IEnvironmentProbe, IDisposable
             }
         }
         finally { foreach (var p in kernels) p.Dispose(); }
-        throw new CheckFailed("代理控制接口", "无法连接内核控制接口；请检查 Clash Verge，或填写控制接口密钥");
+        throw new CheckFailed("代理控制接口", unauthorized
+            ? "控制接口密钥不匹配，请在「客户端与服务设置」中填写 Clash 控制接口密钥"
+            : "无法连接内核控制接口；请检查 Clash Verge，或填写控制接口密钥");
     }
 
     private static NetworkInterface? ActiveTun(string device) => NetworkInterface.GetAllNetworkInterfaces().FirstOrDefault(n =>

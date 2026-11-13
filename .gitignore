@@ -38,3 +38,6 @@ Desktop.ini
 /ClaudeGuard-*.exe
 /ClaudeGuard-*.zip
 /ClaudeGuard-*.sha256
+
+# Local agent notes and diagnostics
+.workbuddy/

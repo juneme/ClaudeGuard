@@ -49,7 +49,13 @@ internal static class Installer
     {
         Admin(); _ = new SecurityIdentifier(owner);
         using var profile = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\" + owner);
-        if (profile?.GetValue("ProfileImagePath") is not string) throw new IOException("Unknown user");
+        if (profile?.GetValue("ProfileImagePath") is not string profilePath) throw new IOException("Unknown user");
+        try
+        {
+            using var legacy = new LegacyGuardTask();
+            LegacyGuardMigration.Remove(legacy, owner, Environment.ExpandEnvironmentVariables(profilePath));
+        }
+        catch (Exception error) { throw new ServiceSetupException(9, error); }
         string source = Directory.GetParent(AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar))!.FullName;
         string serviceSource = Path.Combine(source, "service", "ClaudeGuard.Service.exe");
         using var embeddedService = typeof(Installer).Assembly.GetManifestResourceStream("ClaudeGuard.ServicePayload.exe");
@@ -128,9 +134,9 @@ internal static class Installer
             var deadline = DateTime.UtcNow.AddSeconds(12);
             while (Native.ServicePid() == 0 && DateTime.UtcNow < deadline) Thread.Sleep(250);
             if (Native.ServicePid() == 0) throw new IOException("Service failed to start");
-            // Leave the rollback directory for explicit cleanup; never erase unknown files recursively.
             stage = 16;
             CreateShortcut();
+            DeploymentCleanup.Prune(Product.InstallPath);
         }
         catch (Exception error)
         {
@@ -147,6 +153,7 @@ internal static class Installer
                     string failed = Product.InstallPath + ".failed-" + Guid.NewGuid().ToString("N");
                     if (Directory.Exists(Product.InstallPath)) Directory.Move(Product.InstallPath, failed);
                     Directory.Move(backup, Product.InstallPath);
+                    DeploymentCleanup.TryRemoveBackup(Product.InstallPath, failed);
                 }
                 // A failed rename leaves the original installation in place too.
                 if (serviceExisted) Sc("start", Product.ServiceName);
@@ -179,6 +186,6 @@ internal static class Installer
         Registry.LocalMachine.DeleteSubKeyTree(Product.RegistryPath, false);
         string shortcut = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonPrograms), "ClaudeGuard.lnk");
         if (File.Exists(shortcut)) File.Delete(shortcut);
-        // Keep binaries and the rollback copy available for review/removal after the UI exits.
+        // Running UI binaries are removed by the user after exit; completed upgrades prune generated backups.
     }
 }

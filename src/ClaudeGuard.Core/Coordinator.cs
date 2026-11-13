@@ -14,7 +14,7 @@ public sealed class Coordinator(IEnvironmentProbe probe, TimeProvider? clock = n
     private bool launchConsumed;
     private bool suspended;
     private DateTimeOffset nextRetry;
-    private Response state = new("idle", "先打开 Clash Verge，并连接 TUN 代理", []);
+    private Response state = new("idle", "等待检测：点击「开始检测」确认代理、出口与连接保护", []);
     public Response Status => state with { LaunchUsed = launchConsumed };
     public bool Monitoring => observation != null;
 
@@ -73,11 +73,8 @@ public sealed class Coordinator(IEnvironmentProbe probe, TimeProvider? clock = n
             }
             catch (CheckFailed ex)
             {
-                try { Revoke(ex.Message); }
-                catch (Exception) { items.Add(new("连接隔离", "fail", "无法确认连接隔离，禁止启动；请检查 Windows 防火墙服务")); }
                 var existing = items.LastOrDefault(item => item.Title == ex.Title && item.State == "fail");
-                if (existing == null) items.Add(new(ex.Title, "fail", ex.Message));
-                state = new("blocked", existing?.Detail ?? ex.Message, items, Verdict: verdict);
+                BlockAfterFailure(existing?.Detail ?? ex.Message, ex.Title, items);
             }
             catch (OperationCanceledException)
             {
@@ -140,6 +137,8 @@ public sealed class Coordinator(IEnvironmentProbe probe, TimeProvider? clock = n
             if (observation == null) return;
             if (!suspended && (!Fresh() || !probe.FastMatches(observation.Proxy))) Suspend("代理或网络发生变化，Claude 已断网，正在等待重连");
             if (suspended && time.GetUtcNow() < nextRetry) return;
+            if (suspended && !TryQuarantine())
+            { nextRetry = time.GetUtcNow().AddSeconds(5); return; }
             if (!suspended && time.GetUtcNow() - checkedAt < TimeSpan.FromSeconds(25)) return;
             try
             {
@@ -157,12 +156,15 @@ public sealed class Coordinator(IEnvironmentProbe probe, TimeProvider? clock = n
                 checkedAt = time.GetUtcNow();
                 state = state with
                 {
-                    Phase = "ready", Message = ReadyMessage(verdict), Checks = state.Checks, Ready = true,
+                    Phase = "ready", Message = ReadyMessage(verdict), Ready = true,
+                    Checks = state.Checks.Where(x => x.Title != "连接隔离" && checks.All(c => c.Title != x.Title)).Concat(checks).ToList(),
                     Ticket = "", Country = country, TimeZone = observation.TimeZone, LastChecked = checkedAt
                 };
             }
             catch { Suspend("暂时无法确认连接，Claude 已断网，正在等待重连"); }
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch { Suspend("连接检查发生异常，正在隔离并等待重连"); }
         finally { gate.Release(); }
     }
     private bool Fresh() => state.Ready && time.GetUtcNow() - checkedAt <= TimeSpan.FromSeconds(45);
@@ -177,8 +179,15 @@ public sealed class Coordinator(IEnvironmentProbe probe, TimeProvider? clock = n
     private void BlockAfterFailure(string message, string stage, List<CheckItem> items)
     {
         try { Revoke(message); }
-        catch (Exception) { items.Add(new("连接隔离", "fail", "无法确认连接隔离，禁止启动；请检查 Windows 防火墙服务")); }
-        items.Add(new(stage, "fail", message));
+        catch (Exception ex)
+        {
+            // The original isolation error already explains this stage. A retry must not add
+            // another generic row for the same failure and bury its useful Windows error.
+            if (stage != "连接隔离" && !items.Any(x => x.Title == "连接隔离" && x.State == "fail"))
+                items.Add(new("连接隔离", "fail", ex is CheckFailed ? ex.Message :
+                    $"无法确认连接隔离，禁止启动（错误码 0x{unchecked((uint)ex.HResult):X8}）"));
+        }
+        if (!items.Any(x => x.Title == stage && x.State == "fail")) items.Add(new(stage, "fail", message));
         state = new("blocked", message, items);
     }
     private void Suspend(string message)
@@ -186,7 +195,23 @@ public sealed class Coordinator(IEnvironmentProbe probe, TimeProvider? clock = n
         suspended = true;
         ticket = ""; nextRetry = time.GetUtcNow().AddSeconds(5);
         state = state with { Phase = "reconnecting", Message = message, Ready = false, Ticket = "" };
-        probe.Quarantine();
+        TryQuarantine();
+    }
+
+    private bool TryQuarantine()
+    {
+        try { probe.Quarantine(); return true; }
+        catch (Exception ex)
+        {
+            // Revocation is already complete. Report isolation as unconfirmed, never as a
+            // successful disconnect, and retry isolation before attempting network recovery.
+            string detail = ex is CheckFailed ? ex.Message : $"错误码 0x{unchecked((uint)ex.HResult):X8}";
+            var checks = state.Checks.Where(x => x.Title != "连接隔离").ToList();
+            checks.Add(new("连接隔离", "fail", detail));
+            state = state with { Ready = false, Ticket = "", Checks = checks,
+                Message = "启动许可已撤销，但无法确认连接隔离；正在重试，Claude 进程保持运行" };
+            return false;
+        }
     }
     public void Shutdown() => Revoke("守护服务已停止");
 }

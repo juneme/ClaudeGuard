@@ -4,7 +4,7 @@ from pathlib import Path
 import sys
 
 root = Path(__file__).resolve().parents[1]
-files = [p for base in ('src', 'scripts', 'tests') for p in (root / base).rglob('*')
+files = [p for base in ('src', 'scripts') for p in (root / base).rglob('*')
          if p.is_file() and p.suffix in ('.cs', '.csproj', '.xaml', '.manifest', '.ico', '.py', '.sh')
          and not {'bin', 'obj', '__pycache__'}.intersection(p.relative_to(root).parts)]
 files += [root / name for name in ('Directory.Build.props', 'NuGet.Config', 'global.json', 'VERSION', 'README.md', 'SECURITY.md', 'AGENTS.md', 'LICENSE', '.gitignore', '.gitattributes')]

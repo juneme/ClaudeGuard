@@ -18,6 +18,7 @@ public static class ServiceUpgrade
         int stage = code > 65535 ? code >> 16 : code;
         string detail = stage switch
     {
+        9 => "无法停用旧版 ClaudeBodyguard 计划任务，请检查任务权限与启动命令",
         10 => "旧守护尚未完全退出，暂时无法更新",
         11 => "无法备份旧程序目录，可能有文件仍被占用",
         12 => "无法写入新守护文件，请检查磁盘空间和目录权限",
